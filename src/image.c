@@ -256,7 +256,8 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
             }
         }
         if(class >= 0){
-            int width = im.h * .006;
+//            int width = im.h * .002;
+            int width = 2;
 
             /*
                if(0){
@@ -292,7 +293,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
             if (alphabet) {
-                image label = get_label(alphabet, labelstr, (im.h*.03));
+                image label = get_label(alphabet, labelstr, (im.h*.005));
                 draw_label(im, top + width, left, label, rgb);
                 free_image(label);
             }
