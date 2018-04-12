@@ -1,0 +1,6 @@
+classes = 5
+train = aerial/train1.txt
+valid = aerial/test1.txt
+names = data/aerial.names
+backup = backup
+
