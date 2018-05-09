@@ -265,13 +265,20 @@ if __name__ == "__main__":
                 track_history[d[4]] = []
             track_history[d[4]].append((int(d[0] + (d[2] - d[0])/2), int(d[1] + (d[3] - d[1])/2)))
 
+            color = colours[d[4] % 32]
+            color = colours[d[4] % 32]
             cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), colours[d[4] % 32], 1)
             cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, colours[d[4] % 32], 1)
 
         for t in track_history:
+            fp = None
             color = colours[t % 32]
             for p in track_history[t]:
-                cv2.circle(det_frame, (p[0], p[1]), 1, color, -1)
+                if fp is None:
+                    fp = p
+                    continue
+                cv2.line(det_frame, fp, p, color, 2)
+                fp = p
 
 
 
