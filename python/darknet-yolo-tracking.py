@@ -128,6 +128,17 @@ predict_image = lib.network_predict_image
 predict_image.argtypes = [c_void_p, IMAGE]
 predict_image.restype = POINTER(c_float)
 
+ndarray_image = lib.ndarray_to_image
+ndarray_image.argtypes = [POINTER(c_ubyte), POINTER(c_long), POINTER(c_long)]
+ndarray_image.restype = IMAGE
+
+
+def np_array_to_image(img):
+    data = img.ctypes.data_as(POINTER(c_ubyte))
+    image = ndarray_image(data, img.ctypes.shape, img.ctypes.strides)
+
+    return image
+
 def classify(net, meta, im):
     out = predict_image(net, im)
     res = []
@@ -136,8 +147,8 @@ def classify(net, meta, im):
     res = sorted(res, key=lambda x: -x[1])
     return res
 
-def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
-    im = load_image(image, 0, 0)
+def detect(net, meta, np_image, thresh=.5, hier_thresh=.5, nms=.45):
+    im = np_array_to_image(np_image)
     num = c_int(0)
     pnum = pointer(num)
     predict_image(net, im)
@@ -162,39 +173,66 @@ if __name__ == "__main__":
     #meta = load_meta("cfg/imagenet1k.data")
     #r = classify(net, meta, im)
     #print r[:10]
-    if len(sys.argv) != 4:
-        print("Usage: darknet <data cfg> <net cfg> <weights>")
+    if len(sys.argv) < 5:
+        print("Usage: darknet <data cfg> <net cfg> <weights> <input video> [<framerate divisor>]")
         sys.exit(1)
 
     data_cfg = sys.argv[1]
     net_cfg = sys.argv[2]
     net_weights = sys.argv[3]
-#    filename = sys.argv[4]
+    input_filename = sys.argv[4]
+    frame_div = 1
+    if len(sys.argv) > 5:
+        frame_div = int(sys.argv[5])
 
-    fig = plt.figure()
-    colours = np.random.rand(32,3)
+#    fig = plt.figure()
+    colours = np.random.random_integers(0, 255, (32,3))
 
     mot_tracker = Sort(max_age=4, min_hits=1)
 
     net = load_net(net_cfg, net_weights, 0)
     meta = load_meta(data_cfg)
 
-    input_template = "input/frame-%05d.jpg"
     output_template = "output/frame-%05d.jpg"
+
+
+    cap = cv2.VideoCapture(input_filename)
 
     seq = 1
 
-    print(input_template % (seq))
+    print(input_filename)
 
     last_matched = {}
+    track_history = {}
 
-    while os.path.isfile(input_template % (seq)):
+    red = (0, 0, 255)
 
-        filename = input_template % (seq)
+    while cap.isOpened():
+        ret, orig_frame = cap.read()
+
+        if seq % frame_div != 0:
+            seq += 1
+            continue
+
         out_file = output_template % (seq)
 
-        print('Processing %s...' % (filename))
-        r = detect(net, meta, filename)
+        print('Processing frame %s...' % (seq))
+
+        h, w = orig_frame.shape[:2]
+
+        if h > 540:
+            factor = 540.0 / h
+            h = int(factor * h)
+            w = int(factor * w)
+            frame = cv2.resize(orig_frame, (w, h))
+        else:
+            frame = orig_frame
+
+
+        print(orig_frame.shape[:2])
+        print(frame.shape[:2])
+
+        r = detect(net, meta, frame)
 
         dets = []
         for detection in r:
@@ -210,45 +248,81 @@ if __name__ == "__main__":
         print("%d tracked objects are not detected" % (len(unmatched)))
         print(unmatched)
 
-        ax1 = fig.add_subplot(2, 2, 2)
-        ax2 = fig.add_subplot(2, 2, 1)
-        ax3 = fig.add_subplot(2, 2, 3)
-        im = io.imread(filename)
-        ax1.imshow(im)
-        ax2.imshow(im)
-        ax3.imshow(im)
+        det_frame = frame.copy()
+#        cv2.imshow('frame', frame)
 
-        for d in np_dets:
-            d = d.astype(np.int32)
-            ax2.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,ec='pink',lw=1))
-#            ax2.set_adjustable('box')
+#        for d in np_dets:
+#            d = d.astype(np.int32)
+#            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), red, 1)
 
+        font = cv2.FONT_HERSHEY_SIMPLEX
         for d in trackers:
             d = d.astype(np.int32)
-            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec=colours[d[4]%32,:]))
-            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
-#            ax1.set_adjustable('box')
-            if last_matched.get(d[4]) is not None:
-                last_d = last_matched[d[4]]
-                x1 = last_d[0] + (last_d[2] - last_d[0])/2
-                y1 = last_d[1] + (last_d[3] - last_d[1])/2
-                x2 = d[0] + (d[2] - d[0])/2
-                y2 = d[1] + (d[3] - d[1])/2
-                ax3.add_line(matplotlib.lines.Line2D((x1, x2), (y1, y2), linewidth=0.5, c=colours[d[4]%32,:]))
-            last_matched[d[4]] = d
 
-        for d in unmatched:
-            d = d.astype(np.int32)
-            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec='gray'))
-            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
+            color = colours[d[4] % 32]
 
+            if track_history.get(d[4]) is None:
+                track_history[d[4]] = []
+            track_history[d[4]].append((int(d[0] + (d[2] - d[0])/2), int(d[1] + (d[3] - d[1])/2)))
+
+            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), colours[d[4] % 32], 1)
+            cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, colours[d[4] % 32], 1)
+
+        for t in track_history:
+            for p in track_history[t]:
+                cv2.circle(det_frame, (p[0], p[1]), 1, color, -1)
+
+
+
+#        cv2.imshow('det_frame', det_frame)
+
+#        cv2.waitKey(100)
 
         print("Saving to %s" % (out_file))
-        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-        plt.savefig(out_file, dpi=300)
-        ax1.cla()
-        ax2.cla()
+        cv2.imwrite(out_file, det_frame)
 
+
+
+#        ax1 = fig.add_subplot(2, 2, 2)
+#        ax2 = fig.add_subplot(2, 2, 1)
+#        ax3 = fig.add_subplot(2, 2, 3)
+##        im = io.imread(filename)
+#        im = frame
+#        ax1.imshow(im)
+#        ax2.imshow(im)
+#        ax3.imshow(im)
+#
+#        for d in np_dets:
+#            d = d.astype(np.int32)
+#            ax2.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,ec='pink',lw=1))
+##            ax2.set_adjustable('box')
+#
+#        for d in trackers:
+#            d = d.astype(np.int32)
+#            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec=colours[d[4]%32,:]))
+#            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
+##            ax1.set_adjustable('box')
+#            if last_matched.get(d[4]) is not None:
+#                last_d = last_matched[d[4]]
+#                x1 = last_d[0] + (last_d[2] - last_d[0])/2
+#                y1 = last_d[1] + (last_d[3] - last_d[1])/2
+#                x2 = d[0] + (d[2] - d[0])/2
+#                y2 = d[1] + (d[3] - d[1])/2
+#                ax3.add_line(matplotlib.lines.Line2D((x1, x2), (y1, y2), linewidth=0.5, c=colours[d[4]%32,:]))
+#            last_matched[d[4]] = d
+#
+#        for d in unmatched:
+#            d = d.astype(np.int32)
+#            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec='gray'))
+#            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
+#
+#
+#        print("Saving to %s" % (out_file))
+#        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+#        plt.savefig(out_file, dpi=300)
+#        ax1.cla()
+#        ax2.cla()
+#
         seq += 1
         latest_matched = trackers
 
