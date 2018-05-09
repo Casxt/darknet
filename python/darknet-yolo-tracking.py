@@ -269,13 +269,13 @@ if __name__ == "__main__":
             cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, colours[d[4] % 32], 1)
 
         for t in track_history:
+            color = colours[t % 32]
             for p in track_history[t]:
                 cv2.circle(det_frame, (p[0], p[1]), 1, color, -1)
 
 
 
 #        cv2.imshow('det_frame', det_frame)
-
 #        cv2.waitKey(100)
 
         print("Saving to %s" % (out_file))
