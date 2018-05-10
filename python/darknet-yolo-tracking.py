@@ -193,11 +193,11 @@ def draw_measurement_lines(img, measurement_lines):
         line = measurement_lines[i]
         prev_p = None
         for i in range(1, len(line['points'])):
-            cv2.line(img, line['points'][i-1], line['points'][i], (0, 0, 255), 1)
+            cv2.line(img, line['points'][i-1], line['points'][i], (0, 255, 0), 2)
 
         x, y = line['points'][0]
         font = cv2.FONT_HERSHEY_PLAIN
-        cv2.putText(img, "%s: %d" % (line['name'], line['count']), (x, y - 2), font, 1 , (0, 0, 255), 1)
+        cv2.putText(img, "%s: %d" % (line['name'], line['count']), (x, y - 2), font, 1 , (0, 255, 0), 1)
 
 def perp( a ) :
     b = empty_like(a)
@@ -247,8 +247,8 @@ if __name__ == "__main__":
 
     scale_factor = 1
 
-    if h > 540:
-        scale_factor = 540.0 / h
+#    if h > 540:
+#        scale_factor = 540.0 / h
 
     measurement_lines = load_measurement_lines(measurement_lines_file, scale_factor)
     print measurement_lines
@@ -336,7 +336,7 @@ if __name__ == "__main__":
                 if fp is None:
                     fp = p
                     continue
-                cv2.line(det_frame, fp, p, color, 2)
+                cv2.line(det_frame, fp, p, color, 1)
                 fp = p
 
             if len(th) >= 2:
