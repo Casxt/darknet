@@ -260,6 +260,7 @@ if __name__ == "__main__":
 
     last_matched = {}
     track_history = {}
+    last_points = {}
 
     red = (0, 0, 255)
 
@@ -321,12 +322,20 @@ if __name__ == "__main__":
 
             if track_history.get(d[4]) is None:
                 track_history[d[4]] = []
-            track_history[d[4]].append((int(d[0] + (d[2] - d[0])/2), int(d[1] + (d[3] - d[1])/2)))
+
+            th = track_history[d[4]]
+            th.append((int(d[0] + (d[2] - d[0])/2), int(d[1] + (d[3] - d[1])/2)))
 
             color = colours[d[4] % 32]
             color = colours[d[4] % 32]
             cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), colours[d[4] % 32], 1)
             cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, colours[d[4] % 32], 1)
+
+            if len(th) >= 2:
+                for key in measurement_lines:
+                    ml = measurement_lines[key]
+                    if is_lines_intersects(ml['points'], [th[-2], th[-1]]):
+                        ml['count'] += 1
 
         for t in track_history:
             fp = None
@@ -338,12 +347,6 @@ if __name__ == "__main__":
                     continue
                 cv2.line(det_frame, fp, p, color, 1)
                 fp = p
-
-            if len(th) >= 2:
-                for key in measurement_lines:
-                    ml = measurement_lines[key]
-                    if is_lines_intersects(ml['points'], [th[-2], th[-1]]):
-                        ml['count'] += 1
 
         draw_measurement_lines(det_frame, measurement_lines)
 
