@@ -13,7 +13,9 @@ import matplotlib.offsetbox as offsetbox
 import matplotlib
 from skimage import io
 import cv2
+import pprint
 
+import shapely.geometry as geom
 
 def sample(probs):
     s = sum(probs)
@@ -56,6 +58,7 @@ class METADATA(Structure):
                 ("names", POINTER(c_char_p))]
 
     
+pp = pprint.PrettyPrinter()
 
 #lib = CDLL("/home/pjreddie/documents/darknet/libdarknet.so", RTLD_GLOBAL)
 print(sys.argv[0])
@@ -167,23 +170,65 @@ def detect(net, meta, np_image, thresh=.5, hier_thresh=.5, nms=.45):
     free_detections(dets, num)
     return res
 
+def load_measurement_lines(filename, scale=1):
+    result = {}
+    f = open(filename, 'r')
+    lines = f.readlines()
+    f.close()
+
+    for l in lines:
+        line = l.split(';')
+        m_line = {}
+        m_line['num'] = int(line[0])
+        m_line['name'] = line[1]
+        line_points = map(lambda p: p.split(' '), line[2].split(','))
+        m_line['points'] = map(lambda p: (int(int(p[0]) * scale), int(int(p[1]) * scale)), line_points)
+        m_line['count'] = 0
+        result[m_line['num']] = m_line
+
+    return result
+
+def draw_measurement_lines(img, measurement_lines):
+    for i in measurement_lines:
+        line = measurement_lines[i]
+        prev_p = None
+        for i in range(1, len(line['points'])):
+            cv2.line(img, line['points'][i-1], line['points'][i], (0, 0, 255), 1)
+
+        x, y = line['points'][0]
+        font = cv2.FONT_HERSHEY_PLAIN
+        cv2.putText(img, "%s: %d" % (line['name'], line['count']), (x, y - 2), font, 1 , (0, 0, 255), 1)
+
+def perp( a ) :
+    b = empty_like(a)
+    b[0] = -a[1]
+    b[1] = a[0]
+    return b
+
+def is_lines_intersects(line1, line2):
+    l1 = geom.LineString(line1)
+    l2 = geom.LineString(line2)
+    p = l1.intersection(l2)
+    return not p.is_empty
+
 if __name__ == "__main__":
     #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
     #im = load_image("data/wolf.jpg", 0, 0)
     #meta = load_meta("cfg/imagenet1k.data")
     #r = classify(net, meta, im)
     #print r[:10]
-    if len(sys.argv) < 5:
-        print("Usage: darknet <data cfg> <net cfg> <weights> <input video> [<framerate divisor>]")
+    if len(sys.argv) < 6:
+        print("Usage: darknet <data cfg> <net cfg> <weights> <input video> <measurement lines file> [<framerate divisor>]")
         sys.exit(1)
 
     data_cfg = sys.argv[1]
     net_cfg = sys.argv[2]
     net_weights = sys.argv[3]
     input_filename = sys.argv[4]
+    measurement_lines_file = sys.argv[5]
     frame_div = 1
-    if len(sys.argv) > 5:
-        frame_div = int(sys.argv[5])
+    if len(sys.argv) > 6:
+        frame_div = int(sys.argv[6])
 
 #    fig = plt.figure()
     colours = np.random.random_integers(0, 255, (32,3))
@@ -198,6 +243,17 @@ if __name__ == "__main__":
 
     cap = cv2.VideoCapture(input_filename)
 
+    h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+
+    scale_factor = 1
+
+    if h > 540:
+        scale_factor = 540.0 / h
+
+    measurement_lines = load_measurement_lines(measurement_lines_file, scale_factor)
+    print measurement_lines
+
+
     seq = 1
 
     print(input_filename)
@@ -210,6 +266,9 @@ if __name__ == "__main__":
     while cap.isOpened():
         ret, orig_frame = cap.read()
 
+        if not ret:
+            break
+
         if seq % frame_div != 0:
             seq += 1
             continue
@@ -220,10 +279,9 @@ if __name__ == "__main__":
 
         h, w = orig_frame.shape[:2]
 
-        if h > 540:
-            factor = 540.0 / h
-            h = int(factor * h)
-            w = int(factor * w)
+        if scale_factor != 1:
+            h = int(scale_factor * h)
+            w = int(scale_factor * w)
             frame = cv2.resize(orig_frame, (w, h))
         else:
             frame = orig_frame
@@ -248,7 +306,7 @@ if __name__ == "__main__":
         print("%d tracked objects are not detected" % (len(unmatched)))
         print(unmatched)
 
-        det_frame = frame.copy()
+        det_frame = frame
 #        cv2.imshow('frame', frame)
 
 #        for d in np_dets:
@@ -273,13 +331,21 @@ if __name__ == "__main__":
         for t in track_history:
             fp = None
             color = colours[t % 32]
-            for p in track_history[t]:
+            th = track_history[t]
+            for p in th:
                 if fp is None:
                     fp = p
                     continue
                 cv2.line(det_frame, fp, p, color, 2)
                 fp = p
 
+            if len(th) >= 2:
+                for key in measurement_lines:
+                    ml = measurement_lines[key]
+                    if is_lines_intersects(ml['points'], [th[-2], th[-1]]):
+                        ml['count'] += 1
+
+        draw_measurement_lines(det_frame, measurement_lines)
 
 
 #        cv2.imshow('det_frame', det_frame)
@@ -288,7 +354,7 @@ if __name__ == "__main__":
         print("Saving to %s" % (out_file))
         cv2.imwrite(out_file, det_frame)
 
-
+        pp.pprint(measurement_lines)
 
 #        ax1 = fig.add_subplot(2, 2, 2)
 #        ax2 = fig.add_subplot(2, 2, 1)
