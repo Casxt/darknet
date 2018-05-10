@@ -351,8 +351,8 @@ if __name__ == "__main__":
         draw_measurement_lines(det_frame, measurement_lines)
 
 
-#        cv2.imshow('det_frame', det_frame)
-#        cv2.waitKey(100)
+        cv2.imshow('det_frame', det_frame)
+        cv2.waitKey(100)
 
         print("Saving to %s" % (out_file))
         cv2.imwrite(out_file, det_frame)
