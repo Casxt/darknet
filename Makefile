@@ -1,10 +1,11 @@
 GPU=0
 CUDNN=0
 OPENCV=0
-OPENMP=0
+OPENMP=1
 DEBUG=0
 CBLAS=1
 NUMPY=1
+AVX=1
 
 ARCH= -gencode arch=compute_30,code=sm_30 \
       -gencode arch=compute_35,code=sm_35 \
@@ -36,6 +37,10 @@ endif
 
 ifeq ($(DEBUG), 1) 
 OPTS=-O0 -g
+else
+ifeq ($(AVX), 1)
+CFLAGS+= -ffp-contract=fast -mavx -msse4.1 -msse4a
+endif
 endif
 
 CFLAGS+=$(OPTS)
