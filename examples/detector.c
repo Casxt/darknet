@@ -530,6 +530,7 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
         find_replace(labelpath, "JPEGImages", "labels", labelpath);
         find_replace(labelpath, ".jpg", ".txt", labelpath);
         find_replace(labelpath, ".JPEG", ".txt", labelpath);
+        find_replace(labelpath, ".JPG", ".txt", labelpath);
         find_replace(labelpath, ".png", ".txt", labelpath);
 
         int num_labels = 0;
@@ -555,7 +556,7 @@ void validate_detector_recall(char *datacfg, char *cfgfile, char *weightfile)
             }
         }
 
-        fprintf(stderr, "%5d %5d %5d\tRPs/Img: %.2f\tIOU: %.2f%%\tRecall:%.2f%%\n", i, correct, total, (float)proposals/(i+1), avg_iou*100/total, 100.*correct/total);
+        fprintf(stderr, "%5d %5d %5d\tRPs/Img: %.2f\tIOU: %.2f%%\tRecall:%.2f%%\t%s\n", i, correct, total, (float)proposals/(i+1), avg_iou*100/total, 100.*correct/total, path);
         free(id);
         free_image(orig);
         free_image(sized);
