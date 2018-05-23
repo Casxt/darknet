@@ -2,6 +2,8 @@ from ctypes import *
 import math
 import random
 import sys
+import cv2
+import numpy as np
 
 def sample(probs):
     s = sum(probs)
@@ -115,6 +117,17 @@ predict_image = lib.network_predict_image
 predict_image.argtypes = [c_void_p, IMAGE]
 predict_image.restype = POINTER(c_float)
 
+ndarray_image = lib.ndarray_to_image
+ndarray_image.argtypes = [POINTER(c_ubyte), POINTER(c_long), POINTER(c_long)]
+ndarray_image.restype = IMAGE
+
+
+def np_array_to_image(img):
+    data = img.ctypes.data_as(POINTER(c_ubyte))
+    image = ndarray_image(data, img.ctypes.shape, img.ctypes.strides)
+
+    return image
+
 def classify(net, meta, im):
     out = predict_image(net, im)
     res = []
@@ -137,7 +150,8 @@ def detect(net, meta, image, thresh=.5, hier_thresh=.5, nms=.45):
         for i in range(meta.classes):
             if dets[j].prob[i] > 0:
                 b = dets[j].bbox
-                res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
+#                res.append((meta.names[i], dets[j].prob[i], (b.x, b.y, b.w, b.h)))
+                res.append((meta.names[i], dets[j].prob[i], (b.x - b.w / 2, b.y - b.h / 2, b.x + b.w/2, b.y + b.h/2)))
     res = sorted(res, key=lambda x: -x[1])
     free_image(im)
     free_detections(dets, num)
@@ -161,5 +175,18 @@ if __name__ == "__main__":
     meta = load_meta(data_cfg)
     r = detect(net, meta, filename)
     print r
+
+    img = cv2.imread(filename)
+
+    for d in r:
+        name, prob, bbox = d
+        bbox = np.array(bbox).astype(np.int32)
+        cv2.rectangle(img, (bbox[0], bbox[1]), (bbox[2], bbox[3]), (0, 255, 0), 1)
+
+    cv2.imshow('frame', img)
+    while cv2.waitKey(0) != 27:
+        pass
+
+    cv2.destroyAllWindows()
 
 
