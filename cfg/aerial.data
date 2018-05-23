@@ -1,6 +1,6 @@
 classes = 5
-train = aerial/train1.txt
-valid = aerial/test1.txt
+train = aerial/train3.txt
+valid = aerial/test3.txt
 names = data/aerial.names
 backup = backup
 
