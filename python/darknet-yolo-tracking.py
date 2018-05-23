@@ -1,5 +1,7 @@
 #!/usr/bin/python
 
+import argparse
+
 from ctypes import *
 import math
 import random
@@ -164,7 +166,7 @@ def detect(net, meta, np_image, thresh=.5, hier_thresh=.5, nms=.45):
         for i in range(meta.classes):
             if dets[j].prob[i] > 0:
                 b = dets[j].bbox
-                res.append((meta.names[i], dets[j].prob[i], (b.x - b.w/2, b.y - b.w/2, b.x + b.w/2, b.y + b.h/2)))
+                res.append((meta.names[i], dets[j].prob[i], (b.x - b.w/2, b.y - b.h/2, b.x + b.w/2, b.y + b.h/2)))
     res = sorted(res, key=lambda x: -x[1])
     free_image(im)
     free_detections(dets, num)
@@ -191,13 +193,13 @@ def load_measurement_lines(filename, scale=1):
 def draw_measurement_lines(img, measurement_lines):
     for i in measurement_lines:
         line = measurement_lines[i]
-        prev_p = None
+        color = (255, 0, 0) if line['shoot'] else (0, 255, 0)
         for i in range(1, len(line['points'])):
-            cv2.line(img, line['points'][i-1], line['points'][i], (0, 255, 0), 2)
+            cv2.line(img, line['points'][i-1], line['points'][i], color, 2)
 
         x, y = line['points'][0]
         font = cv2.FONT_HERSHEY_PLAIN
-        cv2.putText(img, "%s: %d" % (line['name'], line['count']), (x, y - 2), font, 1 , (0, 255, 0), 1)
+        cv2.putText(img, "%s: %d" % (line['name'], line['count']), (x, y - 2), font, 1 , color, 1)
 
 def perp( a ) :
     b = empty_like(a)
@@ -211,29 +213,37 @@ def is_lines_intersects(line1, line2):
     p = l1.intersection(l2)
     return not p.is_empty
 
+def print_counters(m_lines):
+    for i in m_lines:
+        line = m_lines[i]
+        print("%d\t%s\t%d" %(line['num'], line['name'], line['count']))
+
 if __name__ == "__main__":
-    #net = load_net("cfg/densenet201.cfg", "/home/pjreddie/trained/densenet201.weights", 0)
-    #im = load_image("data/wolf.jpg", 0, 0)
-    #meta = load_meta("cfg/imagenet1k.data")
-    #r = classify(net, meta, im)
-    #print r[:10]
-    if len(sys.argv) < 6:
-        print("Usage: darknet <data cfg> <net cfg> <weights> <input video> <measurement lines file> [<framerate divisor>]")
-        sys.exit(1)
 
-    data_cfg = sys.argv[1]
-    net_cfg = sys.argv[2]
-    net_weights = sys.argv[3]
-    input_filename = sys.argv[4]
-    measurement_lines_file = sys.argv[5]
-    frame_div = 1
-    if len(sys.argv) > 6:
-        frame_div = int(sys.argv[6])
+    ap = argparse.ArgumentParser(description = "Process video and count of objects' traectories intersections")
+    ap.add_argument("data_cfg", help="Path to data config file, i.e. cfg/aerial.data")
+    ap.add_argument("net_cfg", help="Path to neural network configuration, i.e. cfg/yolov3-aerial.cfg")
+    ap.add_argument("weights", help="Neural network weights file")
+    ap.add_argument("input_video", help="Input video file")
+    ap.add_argument("measurement_lines", help="Measurement lines description file")
+    ap.add_argument("--divisor", help="Framerate divisor", type=int, default=0)
+    ap.add_argument("--show-tracks", help="Show object tracks (slow)", action="store_true")
+    ap.add_argument("--gui", help="Display frames during processing", action="store_true")
+    ap.add_argument("--scale-factor", help="Resize frames before detection by specified scale", type=float, default=1)
+    ap.add_argument("--debug", help="Enable debugging messages", action="store_true")
 
-#    fig = plt.figure()
+    args = ap.parse_args()
+
+    data_cfg = args.data_cfg
+    net_cfg = args.net_cfg
+    net_weights = args.weights
+    input_filename = args.input_video
+    measurement_lines_file = args.measurement_lines
+    frame_div = args.divisor
+
     colours = np.random.random_integers(0, 255, (32,3))
 
-    mot_tracker = Sort(max_age=4, min_hits=1)
+    mot_tracker = Sort(max_age=10, min_hits=1)
 
     net = load_net(net_cfg, net_weights, 0)
     meta = load_meta(data_cfg)
@@ -245,7 +255,7 @@ if __name__ == "__main__":
 
     h = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
 
-    scale_factor = 1
+    scale_factor = args.scale_factor
 
 #    if h > 540:
 #        scale_factor = 540.0 / h
@@ -261,6 +271,7 @@ if __name__ == "__main__":
     last_matched = {}
     track_history = {}
     last_points = {}
+    last_counted_at = {}
 
     red = (0, 0, 255)
 
@@ -288,8 +299,12 @@ if __name__ == "__main__":
             frame = orig_frame
 
 
-        print(orig_frame.shape[:2])
-        print(frame.shape[:2])
+        if args.debug:
+            print(orig_frame.shape[:2])
+            print(frame.shape[:2])
+
+        for key in measurement_lines:
+            measurement_lines[key]['shoot'] = False
 
         r = detect(net, meta, frame)
 
@@ -304,15 +319,16 @@ if __name__ == "__main__":
         trackers, unmatched = mot_tracker.update(np_dets)
         print("Tracked %d objects" % (len(trackers)))
 #        print np.array2string(trackers, precision=4)
-        print("%d tracked objects are not detected" % (len(unmatched)))
-        print(unmatched)
+        if args.debug:
+            print("%d tracked objects are not detected" % (len(unmatched)))
+            print(unmatched)
 
         det_frame = frame
 #        cv2.imshow('frame', frame)
 
 #        for d in np_dets:
 #            d = d.astype(np.int32)
-#            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), red, 1)
+#            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), (0, 255, 0), 1)
 
         font = cv2.FONT_HERSHEY_SIMPLEX
         for d in trackers:
@@ -325,82 +341,56 @@ if __name__ == "__main__":
 
             th = track_history[d[4]]
             th.append((int(d[0] + (d[2] - d[0])/2), int(d[1] + (d[3] - d[1])/2)))
+            if len(th) > 2 and not args.show_tracks:
+                th.pop(0)
 
             color = colours[d[4] % 32]
-            color = colours[d[4] % 32]
-            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), colours[d[4] % 32], 1)
-            cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, colours[d[4] % 32], 1)
 
+            shoot = False
             if len(th) >= 2:
                 for key in measurement_lines:
                     ml = measurement_lines[key]
-                    if is_lines_intersects(ml['points'], [th[-2], th[-1]]):
+                    # don't count one line twice
+                    if is_lines_intersects(ml['points'], [th[-2], th[-1]]) and (last_counted_at.get(d[4]) is None or last_counted_at[d[4]] != key):
+                        ml['shoot'] = True
                         ml['count'] += 1
+                        last_counted_at[d[4]] = key
+                        shoot = True
 
-        for t in track_history:
-            fp = None
-            color = colours[t % 32]
-            th = track_history[t]
-            for p in th:
-                if fp is None:
+            if shoot:
+                color = (0, 0, 255)
+            cv2.rectangle(det_frame,(d[0],d[1]), (d[2], d[3]), color, 1)
+            cv2.circle(det_frame, (d[0] + (d[2]-d[0])/2, d[1] + (d[3] - d[1]) / 2), 3, (0, 0, 255), cv2.FILLED)
+            cv2.putText(det_frame, str(d[4]), (d[0], d[1] - 2), font, 0.5, color, 1)
+
+        if args.show_tracks:
+            for t in track_history:
+                fp = None
+                color = colours[t % 32]
+                th = track_history[t]
+                for p in th:
+                    if fp is None:
+                        fp = p
+                        continue
+                    cv2.line(det_frame, fp, p, color, 1)
                     fp = p
-                    continue
-                cv2.line(det_frame, fp, p, color, 1)
-                fp = p
 
         draw_measurement_lines(det_frame, measurement_lines)
 
 
-        cv2.imshow('det_frame', det_frame)
-        cv2.waitKey(100)
+        if args.gui:
+            cv2.imshow('det_frame', det_frame)
+            if cv2.waitKey(100) == 27:
+                print_counters(measurement_lines)
+                break
 
         print("Saving to %s" % (out_file))
         cv2.imwrite(out_file, det_frame)
 
-        pp.pprint(measurement_lines)
 
-#        ax1 = fig.add_subplot(2, 2, 2)
-#        ax2 = fig.add_subplot(2, 2, 1)
-#        ax3 = fig.add_subplot(2, 2, 3)
-##        im = io.imread(filename)
-#        im = frame
-#        ax1.imshow(im)
-#        ax2.imshow(im)
-#        ax3.imshow(im)
-#
-#        for d in np_dets:
-#            d = d.astype(np.int32)
-#            ax2.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,ec='pink',lw=1))
-##            ax2.set_adjustable('box')
-#
-#        for d in trackers:
-#            d = d.astype(np.int32)
-#            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec=colours[d[4]%32,:]))
-#            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
-##            ax1.set_adjustable('box')
-#            if last_matched.get(d[4]) is not None:
-#                last_d = last_matched[d[4]]
-#                x1 = last_d[0] + (last_d[2] - last_d[0])/2
-#                y1 = last_d[1] + (last_d[3] - last_d[1])/2
-#                x2 = d[0] + (d[2] - d[0])/2
-#                y2 = d[1] + (d[3] - d[1])/2
-#                ax3.add_line(matplotlib.lines.Line2D((x1, x2), (y1, y2), linewidth=0.5, c=colours[d[4]%32,:]))
-#            last_matched[d[4]] = d
-#
-#        for d in unmatched:
-#            d = d.astype(np.int32)
-#            ax1.add_patch(patches.Rectangle((d[0],d[1]),d[2]-d[0],d[3]-d[1],fill=False,lw=0.5,ec='gray'))
-#            ax1.text(d[0], d[1]-1, str(d[4]), size='xx-small', color=colours[d[4]%32,:])
-#
-#
-#        print("Saving to %s" % (out_file))
-#        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-#        plt.savefig(out_file, dpi=300)
-#        ax1.cla()
-#        ax2.cla()
-#
         seq += 1
         latest_matched = trackers
 
+    print_counters(measurement_lines)
 
 
