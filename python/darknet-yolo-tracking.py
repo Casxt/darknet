@@ -226,7 +226,7 @@ if __name__ == "__main__":
     ap.add_argument("weights", help="Neural network weights file")
     ap.add_argument("input_video", help="Input video file")
     ap.add_argument("measurement_lines", help="Measurement lines description file")
-    ap.add_argument("--divisor", help="Framerate divisor", type=int, default=0)
+    ap.add_argument("--divisor", help="Framerate divisor, integer", type=int, default=1)
     ap.add_argument("--show-tracks", help="Show object tracks (slow)", action="store_true")
     ap.add_argument("--gui", help="Display frames during processing", action="store_true")
     ap.add_argument("--scale-factor", help="Resize frames before detection by specified scale", type=float, default=1)
